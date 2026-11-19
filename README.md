@@ -405,7 +405,6 @@ Planner_agent/
 ├── .streamlit/secrets.toml.example
 ├── .env.example
 ├── requirements.txt
-├── SPECS.md                # Original design spec
 └── README.md
 ```
 
@@ -479,10 +478,5 @@ cp .env.example .env        # then fill in the keys
 - Use the user's location instead of the city centre.
 - A "swap this stop" action that re-runs only `draft_plan` with a constraint.
 - A real events API.
-- Evals on a fixed set of personas (T1 to T7 in `SPECS.md`).
+- Evals on a fixed set of personas.
 
----
-
-## AI usage
-
-_TODO: 2 to 3 lines on how AI tools were used during the build._
