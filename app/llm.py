@@ -62,9 +62,9 @@ def normalise_interests(items: list[str]) -> list[str]:
 
 def parse_duration(text: str) -> Optional[int]:
     t = text.lower()
-    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:hours|hour|hrs|hr|h)\b", t)
-    if m:
-        return int(float(m.group(1)) * 60)
+    for m in re.finditer(r"(\d+(?:\.\d+)?)\s*(?:hours|hour|hrs|hr|h)\b", t):
+        if float(m.group(1)) <= 16:  # skip clock times like "1700 hrs"
+            return int(float(m.group(1)) * 60)
     m = re.search(r"(\d+)\s*(?:minutes|mins|min)\b", t)
     if m:
         return int(m.group(1))
@@ -96,6 +96,23 @@ def parse_time_range(text: str) -> Optional[tuple[str, int]]:
     return f"{a // 60:02d}:{a % 60:02d}", b - a
 
 
+_NOT_CITIES = {"the", "a", "an", "my", "mood", "town", "evening", "morning", "afternoon", "night", "home", "office"}
+
+
+def parse_start_time(text: str) -> Optional[str]:
+    """'1700 hrs' / '17:00' / '5pm' / '5:30 pm' -> 'HH:MM'."""
+    t = text.lower()
+    m = re.search(r"\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)\b", t)
+    if m:
+        mins = _hour(m.group(1), m.group(2), m.group(3))
+        return f"{mins // 60:02d}:{mins % 60:02d}"
+    m = re.search(r"\b([01]?\d|2[0-3]):?([0-5]\d)\s*(?:hrs?|hours|h)\b", t) or \
+        re.search(r"\b([01]?\d|2[0-3])[:.]([0-5]\d)\b", t)
+    if m:
+        return f"{int(m.group(1)):02d}:{m.group(2)}"
+    return None
+
+
 def heuristic_parse(raw) -> Preferences:
     """Rough regex parser so the app still works when OpenAI is down."""
     if isinstance(raw, dict):
@@ -112,22 +129,28 @@ def heuristic_parse(raw) -> Preferences:
             if any(re.search(rf"\b{n}\b", t) for n in [key, *city.get("aliases", [])]):
                 p.city = key.title()
         if not p.city:
-            m = re.search(r"\b(?:in|at)\s+([A-Z][a-zA-Z]+)", text)
-            if m:
-                p.city = m.group(1)
+            m = re.search(r"\b(?:i am|i'm|im|staying|based|living)\s+in\s+([a-z][a-z]+)", t) \
+                or re.search(r"\b(?:in|at)\s+([A-Z][a-zA-Z]+)", text)
+            if m and m.group(1).lower() not in _NOT_CITIES:
+                p.city = m.group(1).title()
 
     if isinstance(raw, dict) and raw.get("budget") not in (None, ""):
         p.budget_inr = int(float(raw["budget"]))
     else:
-        m = re.search(r"(?:₹|rs\.?|inr)\s*(\d[\d,]*)|(\d[\d,]*)\s*(?:rs|rupees|inr|₹)", t)
+        m = re.search(r"(?:₹|rs\.?|inr|budget(?:\s+(?:of|is))?:?)\s*(\d[\d,]*(?:\.\d+)?)\s*(k)?\b"
+                      r"|(\d[\d,]*(?:\.\d+)?)\s*(k)?\s*(?:rs|rupees|inr|₹)", t)
         if m:
-            p.budget_inr = int((m.group(1) or m.group(2)).replace(",", ""))
+            num = float((m.group(1) or m.group(3)).replace(",", ""))
+            p.budget_inr = int(num * 1000 if (m.group(2) or m.group(4)) else num)
 
     rng = parse_time_range(t)
     if rng:
         p.start_time, p.duration_min = rng
     else:
         p.duration_min = parse_duration(str(raw.get("available_time", "")) if isinstance(raw, dict) else t)
+        start = parse_start_time(t)
+        if start:
+            p.start_time = start
     if isinstance(raw, dict) and raw.get("start_time"):
         p.start_time = raw["start_time"]
 

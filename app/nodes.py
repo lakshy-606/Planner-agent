@@ -35,10 +35,21 @@ Rules:
 - assumptions: short notes for anything else you had to assume."""
 
 
+TIME_HINT = re.compile(
+    r"\d\s*(am|pm)\b"                              # 5pm, 5 pm
+    r"|\d[:.]\d\d"                                  # 17:00, 5.30
+    r"|\b([01]?\d|2[0-3])[0-5]\d\s*(hrs?|hours|h)\b"  # 1700 hrs, 0930h
+    r"|\bfrom\s+\d|\b\d{1,2}\s*(to|-|till|until)\s*\d"  # from 4 to 9
+    r"|\b(at|start\w*(\s+time)?(\s+(at|is|from))?)\s*:?\s*\d"  # at 5, start time 17
+    r"|\b(noon|midday)\b",
+    re.I)
+
+
 def _start_given(raw) -> bool:
+    """Did the user state a start time? Used only to decide whether to show the 15:00 assumption."""
     if isinstance(raw, dict):
         return bool(raw.get("start_time"))
-    return bool(re.search(r"\d\s*(am|pm)|\d:\d\d|\bfrom\s+\d|\b\d{1,2}\s*(to|-|till)\s*\d", str(raw).lower()))
+    return bool(TIME_HINT.search(str(raw)))
 
 
 @traced("parse_preferences")
@@ -75,8 +86,8 @@ def parse_preferences(state: PlannerState) -> dict:
     # drop LLM notes we generate ourselves (start time, missing fields) to avoid duplicates
     prefs.assumptions = [a for a in prefs.assumptions
                          if not re.search(r"start|15:00|interest|budget|not (specified|mentioned|given|provided)", a, re.I)]
-    if not _start_given(raw):
-        prefs.start_time = "15:00"
+    # Trust the LLM's start time; only flag the 15:00 default when the user really gave none
+    if prefs.start_time == "15:00" and not _start_given(raw):
         prefs.assumptions.append("No start time given, so the plan starts at 15:00.")
     if prefs.duration_min:
         start = tools.to_min(prefs.start_time)

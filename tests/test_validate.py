@@ -210,3 +210,28 @@ def test_thirty_minute_window_gets_one_stop():
     f = out["final"]
     assert len(f["stops"]) == 1 and f["stops"][0]["end"] <= "17:30"
     assert not any("over" in n for n in f["notes"])
+
+
+@pytest.mark.parametrize("text,given", [
+    ("start time 1700 hrs, duration 4 hrs", True), ("from 5pm", True), ("starting at 17:00", True),
+    ("at 5 in the evening", True), ("free from 4 to 9", True), ("budget 3k, duration 4 hrs", False),
+    ("something fun with ₹2000", False),
+])
+def test_start_time_detection(text, given):
+    from app.nodes import _start_given
+    assert _start_given(text) is given
+
+
+def test_heuristic_parse_military_time_and_k_budget():
+    p = heuristic_parse("i am in pune , budget 3k, want to do some fun, like clubbing and partying , "
+                        "start time 1700 hrs , duration 4 hrs")
+    assert (p.city, p.budget_inr, p.start_time, p.duration_min) == ("Pune", 3000, "17:00", 240)
+    assert "nightlife" in p.interests
+
+
+def test_graph_offline_keeps_stated_start_time():
+    out = run("i am in pune , budget 3k, want to do some fun, like clubbing and partying , "
+              "start time 1700 hrs , duration 4 hrs")
+    f = out["final"]
+    assert f["totals"]["window"] == "17:00–21:00"
+    assert not any("15:00" in a for a in f["assumptions"])
