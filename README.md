@@ -2,7 +2,7 @@
 
 An AI agent that turns your **city, budget, time, mood, interests and constraints** into a realistic, personalised Saturday plan made of **real places**. It explains why each stop fits you, is honest about trade-offs, and shows a **live trace** of every step it took.
 
-**Live demo:** _TODO: Streamlit Cloud URL_
+**Live demo:** https://planner-agent-606.streamlit.app/
 
 ---
 
@@ -193,6 +193,7 @@ Both branches run **at the same time** and join at `enrich_and_filter`.
 - **Activities:** interests map to Geoapify categories (walks/nature → parks and natural areas; art/culture → museums, culture, sights; books → bookstores; music/nightlife → culture, bars, pubs; shopping → malls and markets).
 - **Food:** restaurants and cafés. If the user is vegetarian or vegan, the query adds Geoapify's `conditions=vegetarian`.
 - Searches within **8 km** of the city centre, and widens to **15 km** if there are fewer than 5 results. It fetches up to 100 results, because many OSM places have no name.
+- With a budget under **₹500**, parks are always searched too, even if the user didn't mention walks or nature, so there are free options.
 - Each raw result is **normalised** into a `Place`:
   - subcategory and interests (from Geoapify categories)
   - **cost** (₹ table by type), **crowd** (Saturday morning/afternoon/evening rules by type) and **energy**
@@ -229,7 +230,7 @@ The survivors are ranked by a **fit score**: interest matches, energy match, cro
 - **Travel per leg** comes from the Route Matrix (drive mode, `traffic=approximated`). Routing times are optimistic for Indian traffic, so each leg is at least **20 km/h** plus 5 minutes for pickup or parking. If the API fails, it uses straight-line distance × 1.35 at 20 km/h.
 - **Schedule** (`build_schedule`): stops are placed one after another starting at the start time.
   - If a place isn't open yet on arrival, the stop waits for it to open.
-  - Each stop lasts between 30 and 180 minutes.
+  - Each stop lasts between 30 and 180 minutes. If the whole window is shorter than 30 minutes, one stop fills the window.
   - A stop is shortened to end at closing time or at the end of the window, if at least 30 minutes remain.
 - **Cost** = the sum of the stops' per-person prices. Travel costs are not included.
 
@@ -336,7 +337,8 @@ From `validate_plan` in `app/tools.py`:
 | Geoapify down, rate-limited or no key | Timeout, 4xx/5xx or missing key | Curated data for that city; the trace shows `source=mock` |
 | Too few matches | Fewer than 5 results, or fewer than 3 candidates | Widens to 15 km, then tops up with curated or generic places |
 | Budget too tight | Greedy finds nothing within budget | Cheapest plan, the gap in ₹, and free alternatives |
-| Late start or short window | Hours filter and stop-count rule | Closed places removed; a shorter plan with an honest note |
+| ₹0 budget | Budget is 0, not missing | Free places only (parks, free museums); never replaced by the default |
+| Late start or short window | Hours filter and stop-count rule | Closed places removed; under 90 min gets 1 stop, under 30 min gets 1 stop filling the window; if nothing is open, the plan says so |
 | LLM returns bad JSON or an unknown ID | Pydantic error or validation rule 1 | Counts as a failed attempt and is retried with feedback |
 | Validation fails twice | `retries >= 2` | Deterministic `fallback_plan` |
 | OpenAI down or no key | `LLMUnavailable` | Regex parsing, greedy planner and template explanations: a full plan with no LLM |
@@ -399,7 +401,7 @@ Planner_agent/
 │   ├── data_sources.py     # Geoapify REST client (TTL cache), opening-hours parser, mock loader
 │   └── trace.py            # @traced decorator
 ├── data/mock_data.json     # Curated fallback data (3 cities + generic templates)
-├── tests/test_validate.py  # 18 offline tests: rules, scheduler, fallback, parsers, full graph
+├── tests/test_validate.py  # 30 offline tests: rules, scheduler, fallback, parsers, full graph
 ├── .streamlit/secrets.toml.example
 ├── .env.example
 ├── requirements.txt
@@ -447,6 +449,7 @@ cp .env.example .env        # then fill in the keys
    GEOAPIFY_API_KEY = "..."
    ```
 4. Open the URL in an incognito window and try: the prefilled form, *"something fun this weekend"*, and the city *"Atlantis"*.
+5. Every push to `main` redeploys the app automatically.
 
 ---
 
